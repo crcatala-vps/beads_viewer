@@ -44,6 +44,7 @@ func main() {
 	profileStartup := flag.Bool("profile-startup", false, "Output detailed startup timing profile for diagnostics")
 	profileTUIStartup := flag.Bool("profile-tui-startup", false, "Output comprehensive TUI startup profile (includes analysis + UI components)")
 	profileJSON := flag.Bool("profile-json", false, "Output profile in JSON format (use with --profile-startup or --profile-tui-startup)")
+	verboseStartup := flag.Bool("verbose-startup", false, "Show live startup progress instead of static 'Initializing...'")
 	noHooks := flag.Bool("no-hooks", false, "Skip running hooks during export")
 	workspaceConfig := flag.String("workspace", "", "Load issues from workspace config file (.bv/workspace.yaml)")
 	repoFilter := flag.String("repo", "", "Filter issues by repository prefix (e.g., 'api-' or 'api')")
@@ -153,6 +154,11 @@ func main() {
 		fmt.Println("      Shows all phases: data loading, graph analysis, and TUI components.")
 		fmt.Println("      Use this to diagnose slow startup when --profile-startup shows fast times.")
 		fmt.Println("      Use with --profile-json for machine-readable output.")
+		fmt.Println("")
+		fmt.Println("  --verbose-startup")
+		fmt.Println("      Show live startup progress instead of static 'Initializing...' message.")
+		fmt.Println("      Displays elapsed time and status of each startup phase.")
+		fmt.Println("      Useful for diagnosing which phase is slow during actual TUI startup.")
 		fmt.Println("")
 		fmt.Println("  --workspace CONFIG")
 		fmt.Println("      Load issues from workspace configuration file.")
@@ -660,6 +666,9 @@ func main() {
 
 		// Launch TUI with historical issues (no live reload for historical view)
 		m := ui.NewModel(historicalIssues, activeRecipe, "")
+		if *verboseStartup {
+			m.SetVerboseStartup(true)
+		}
 		p := tea.NewProgram(m, tea.WithAltScreen(), tea.WithMouseCellMotion())
 		if _, err := p.Run(); err != nil {
 			fmt.Printf("Error running beads viewer: %v\n", err)
@@ -732,6 +741,11 @@ func main() {
 	// Initial Model with live reload support
 	m := ui.NewModel(issues, activeRecipe, beadsPath)
 	defer m.Stop() // Clean up file watcher
+
+	// Enable verbose startup if requested
+	if *verboseStartup {
+		m.SetVerboseStartup(true)
+	}
 
 	// Enable workspace mode if loading from workspace config
 	if workspaceInfo != nil {

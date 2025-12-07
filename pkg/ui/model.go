@@ -172,6 +172,13 @@ type Model struct {
 	availableRepos   []string        // List of repo prefixes available
 	activeRepos      map[string]bool // Which repos are currently shown (nil = all)
 	workspaceSummary string          // Summary text for footer (e.g., "3 repos")
+
+	// Verbose startup mode
+	verboseStartup   bool
+	startupTime      time.Time     // When NewModel was called
+	startupPhase     string        // Current phase description
+	phase2Ready      bool          // Whether Phase 2 analysis is complete
+	windowSizeReady  bool          // Whether first WindowSizeMsg was received
 }
 
 // WorkspaceInfo contains workspace loading metadata for TUI display
@@ -385,7 +392,22 @@ func NewModel(issues []model.Issue, activeRecipe *recipe.Recipe, beadsPath strin
 		timeTravelInput:   ti,
 		statusMsg:         initialStatus,
 		statusIsError:     initialStatusErr,
+		startupTime:       time.Now(),
+		startupPhase:      "Starting TUI...",
 	}
+}
+
+// SetVerboseStartup enables verbose startup mode for diagnostics
+func (m *Model) SetVerboseStartup(v bool) {
+	m.verboseStartup = v
+}
+
+// boolStatus returns a checkmark or pending indicator
+func boolStatus(b bool) string {
+	if b {
+		return "✓ done"
+	}
+	return "⏳ waiting..."
 }
 
 // NewModelWithProfile creates a new Model with detailed timing profile.
@@ -658,6 +680,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Stats != m.analysis {
 			return m, nil
 		}
+		m.phase2Ready = true
+		m.startupPhase = "Phase 2 analysis complete"
 		// Phase 2 analysis complete - regenerate insights with full data
 		ins := m.analysis.GenerateInsights(len(m.issues))
 		m.insightsPanel = NewInsightsModel(ins, m.issueMap, m.theme)
@@ -1149,6 +1173,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.isSplitView = msg.Width > SplitViewThreshold
+		if !m.windowSizeReady {
+			m.windowSizeReady = true
+			m.startupPhase = "Window size received"
+		}
 		m.ready = true
 		bodyHeight := m.height - 1 // keep 1 row for footer
 		if bodyHeight < 5 {
@@ -1501,6 +1529,14 @@ func (m Model) handleTimeTravelInputKeys(msg tea.KeyMsg) Model {
 
 func (m Model) View() string {
 	if !m.ready {
+		if m.verboseStartup {
+			elapsed := time.Since(m.startupTime)
+			status := fmt.Sprintf("Initializing... [%v]\n\n", elapsed.Round(time.Millisecond))
+			status += fmt.Sprintf("  Phase 2 Analysis: %s\n", boolStatus(m.phase2Ready))
+			status += fmt.Sprintf("  Window Size:      %s\n", boolStatus(m.windowSizeReady))
+			status += fmt.Sprintf("\n  Current: %s\n", m.startupPhase)
+			return status
+		}
 		return "Initializing..."
 	}
 

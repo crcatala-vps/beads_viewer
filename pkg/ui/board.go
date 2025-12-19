@@ -971,8 +971,15 @@ func (b BoardModel) View(width, height int) string {
 		// - 2 border lines (RoundedBorder adds top + bottom)
 		// - 1 margin line (MarginBottom(1))
 		// Total: 6 lines per card
+		//
+		// Column inner height calculation:
+		// - colHeight is passed to Height(), which sets inner height
+		// - Border adds 2 to rendered height (not inner)
+		// - We need content to fit within colHeight
+		// - Reserve 1 line for scroll indicator
 		cardHeight := 6
-		visibleCards := (colHeight - 1) / cardHeight
+		availableForCards := colHeight - 1 // Reserve 1 for scroll indicator
+		visibleCards := availableForCards / cardHeight
 		if visibleCards < 1 {
 			visibleCards = 1
 		}
@@ -1035,8 +1042,10 @@ func (b BoardModel) View(width, height int) string {
 		content := lipgloss.JoinVertical(lipgloss.Left, cards...)
 
 		// Column container
+		// NOTE: Border adds 2 chars to rendered width, so subtract 2 from Width
+		// to ensure total rendered width equals baseWidth
 		colStyle := t.Renderer.NewStyle().
-			Width(baseWidth).
+			Width(baseWidth - 2).
 			Height(colHeight).
 			Padding(0, 1).
 			Border(lipgloss.RoundedBorder())
@@ -1048,6 +1057,12 @@ func (b BoardModel) View(width, height int) string {
 		}
 
 		column := lipgloss.JoinVertical(lipgloss.Center, header, colStyle.Render(content))
+
+		// Add gap between columns (except last) to use the reserved gap space
+		if i < len(b.activeColIdx)-1 {
+			column = t.Renderer.NewStyle().MarginRight(2).Render(column)
+		}
+
 		renderedCols = append(renderedCols, column)
 	}
 
@@ -1144,9 +1159,10 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// CARD STYLING - Fixed 4-line height (bv-1daf) with blocking colors (bv-kklp)
+	// NOTE: Border adds 2 chars to rendered width, so subtract 2 from Width
 	// ══════════════════════════════════════════════════════════════════════════
 	cardStyle := t.Renderer.NewStyle().
-		Width(width).
+		Width(width - 2).
 		Padding(0, 1).
 		MarginBottom(1)
 
@@ -1174,16 +1190,16 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	}
 
 	if selected {
+		// Selected card: double border with primary color, no background
+		// This avoids the inconsistent background coverage issue
 		cardStyle = cardStyle.
-			Background(t.Highlight).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderColor)
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(t.Primary)
 	} else if isCurrentMatch {
-		// Highlight current match with subtle background (bv-yg39)
+		// Current search match: double border to distinguish
 		cardStyle = cardStyle.
-			Background(lipgloss.AdaptiveColor{Light: "#e1bee7", Dark: "#4a148c"}).
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(borderColor)
+			Border(lipgloss.DoubleBorder()).
+			BorderForeground(lipgloss.AdaptiveColor{Light: "#7b1fa2", Dark: "#ce93d8"})
 	} else {
 		cardStyle = cardStyle.
 			Border(lipgloss.RoundedBorder()).
@@ -1225,11 +1241,18 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 		t.Renderer.NewStyle().Bold(true).Foreground(t.Secondary).Render(displayID),
 		ageStyled,
 	)
+	// Truncate line1 to fit content area (width - 4 for border + padding)
+	maxLine1Width := width - 4
+	if maxLine1Width < 10 {
+		maxLine1Width = 10
+	}
+	line1 = truncateRunesHelper(line1, maxLine1Width, "…")
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// LINE 2: Title with full available width (bv-1daf)
+	// Card content area = width - 2 (border) - 2 (padding) = width - 4
 	// ══════════════════════════════════════════════════════════════════════════
-	titleWidth := width - 2
+	titleWidth := width - 4
 	if titleWidth < 10 {
 		titleWidth = 10
 	}
@@ -1289,6 +1312,12 @@ func (b BoardModel) renderCard(issue model.Issue, width int, selected bool, colI
 	line3 := ""
 	if len(meta) > 0 {
 		line3 = strings.Join(meta, " ")
+		// Truncate meta line to fit content area (width - 4 for border + padding)
+		maxMetaWidth := width - 4
+		if maxMetaWidth < 10 {
+			maxMetaWidth = 10
+		}
+		line3 = truncateRunesHelper(line3, maxMetaWidth, "…")
 	}
 
 	// Render card with 3 content lines (line4 removed to eliminate extra vertical gap)
@@ -1316,9 +1345,10 @@ func (b BoardModel) renderExpandedCard(issue model.Issue, width int, _, _ int) s
 
 	// ══════════════════════════════════════════════════════════════════════════
 	// CARD STYLING - Expanded card is always selected (since we expand selected)
+	// NOTE: Border adds 2 chars to rendered width, so subtract 2 from Width
 	// ══════════════════════════════════════════════════════════════════════════
 	cardStyle := t.Renderer.NewStyle().
-		Width(width).
+		Width(width - 2).
 		Padding(0, 1).
 		MarginBottom(1)
 
